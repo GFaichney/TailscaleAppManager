@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tailscale Multi-Server</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <h1>Tailscale Multi-Server</h1>
+      <p>Launch apps, map routes, and manage processes from one dashboard.</p>
+    </header>
+
+    <section class="panel">
+      <h2>Add Application</h2>
+      <form id="appForm" class="grid">
+        <label>
+          Application Name
+          <input name="application_name" required />
+        </label>
+        <label>
+          Application Port
+          <input name="application_port" type="number" min="1" max="65535" required />
+        </label>
+        <label>
+          Web Path
+          <input name="web_path" required pattern="[A-Za-z0-9_-]+" placeholder="my-app" />
+        </label>
+        <label>
+          Executable (optional)
+          <input name="executable" placeholder="./run.sh" />
+        </label>
+        <label>
+          Setup Executable (optional)
+          <input name="setup_executable" placeholder="./setup.sh" />
+        </label>
+        <label>
+          Application Folder (optional)
+          <input name="application_folder" placeholder="/opt/my-app" />
+        </label>
+        <label>
+          GitHub Location (optional)
+          <input name="github_location" placeholder="https://github.com/org/repo.git" />
+        </label>
+        <div class="actions">
+          <button type="submit">Add Application</button>
+        </div>
+      </form>
+      <p id="status" role="status"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>Managed Applications</h2>
+        <button id="refreshBtn" type="button">Refresh</button>
+      </div>
+      <div id="appsList" class="cards"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

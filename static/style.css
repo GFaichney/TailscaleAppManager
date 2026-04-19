@@ -1,0 +1,137 @@
+:root {
+  --bg-a: #f2efe7;
+  --bg-b: #d8e3d5;
+  --ink: #1f2a2e;
+  --muted: #516367;
+  --panel: #ffffffee;
+  --accent: #0f766e;
+  --danger: #b42318;
+  --line: #b8c4bf;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  color: var(--ink);
+  background: linear-gradient(135deg, var(--bg-a), var(--bg-b));
+  min-height: 100vh;
+}
+
+.shell {
+  width: min(1040px, 94vw);
+  margin: 2rem auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+}
+
+.hero p {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem;
+  backdrop-filter: blur(3px);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem;
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+input {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 0.58rem 0.9rem;
+  font: inherit;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+
+button.delete {
+  background: var(--danger);
+}
+
+.actions {
+  display: flex;
+  align-items: end;
+}
+
+.panel-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.8rem;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.card h3 {
+  margin: 0;
+}
+
+.card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+#status {
+  min-height: 1.2rem;
+  color: var(--muted);
+}
+
+#status.error {
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .shell {
+    margin: 1rem auto;
+  }
+
+  .panel {
+    padding: 0.8rem;
+  }
+}
