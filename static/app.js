@@ -2,6 +2,9 @@ const appForm = document.getElementById('appForm');
 const appsList = document.getElementById('appsList');
 const statusEl = document.getElementById('status');
 const refreshBtn = document.getElementById('refreshBtn');
+const checkUpdatesBtn = document.getElementById('checkUpdatesBtn');
+const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+const logPane = document.getElementById('logPane');
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -9,6 +12,10 @@ function setStatus(message, isError = false) {
 }
 
 function cardTemplate(app) {
+  const updateFlag = app.update_available
+    ? `<p class="update-flag">Update available (${app.pending_commits ?? 0} commit(s))</p>`
+    : '';
+
   return `
     <article class="card">
       <h3>${app.application_name}</h3>
@@ -16,6 +23,7 @@ function cardTemplate(app) {
       <p>Path: /${app.web_path}</p>
       <p>PID: ${app.pid ?? 'n/a'}</p>
       <p>Folder: ${app.application_folder ?? 'n/a'}</p>
+      ${updateFlag}
       <button class="delete" data-id="${app.id}">Delete</button>
     </article>
   `;
@@ -33,6 +41,54 @@ async function renderApps() {
   try {
     const apps = await fetchApps();
     appsList.innerHTML = apps.length ? apps.map(cardTemplate).join('') : '<p>No applications configured.</p>';
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function fetchLogs() {
+  const response = await fetch('/api/logs');
+  if (!response.ok) {
+    throw new Error('Failed to fetch logs');
+  }
+  return response.json();
+}
+
+function renderLogEntry(log) {
+  const level = (log.level || 'info').toLowerCase();
+  const date = log.timestamp ? new Date(log.timestamp).toLocaleString() : 'unknown-time';
+  const appName = log.app_name ? ` [${log.app_name}]` : '';
+  return `
+    <article class="log-entry ${level}">
+      <p class="log-meta">${date} | ${level.toUpperCase()}${appName}</p>
+      <p>${log.message || ''}</p>
+    </article>
+  `;
+}
+
+async function renderLogs() {
+  try {
+    const logs = await fetchLogs();
+    const ordered = [...logs].reverse();
+    logPane.innerHTML = ordered.length ? ordered.map(renderLogEntry).join('') : '<p>No log entries yet.</p>';
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function checkUpdates() {
+  setStatus('Checking GitHub updates...');
+  try {
+    const response = await fetch('/api/apps/check-updates', { method: 'POST' });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || 'Update check failed');
+    }
+
+    const updatedCount = (result.results || []).filter((item) => item.status === 'updated').length;
+    setStatus(`Update check complete. Updated ${updatedCount} app(s).`);
+    await renderApps();
+    await renderLogs();
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -66,6 +122,7 @@ appForm.addEventListener('submit', async (event) => {
     appForm.reset();
     setStatus(`Added ${result.application_name}.`);
     await renderApps();
+    await renderLogs();
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -89,6 +146,7 @@ appsList.addEventListener('click', async (event) => {
 
     setStatus('Application deleted.');
     await renderApps();
+    await renderLogs();
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -98,4 +156,13 @@ refreshBtn.addEventListener('click', () => {
   renderApps();
 });
 
+checkUpdatesBtn.addEventListener('click', () => {
+  checkUpdates();
+});
+
+refreshLogsBtn.addEventListener('click', () => {
+  renderLogs();
+});
+
 renderApps();
+renderLogs();

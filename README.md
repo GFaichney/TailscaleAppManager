@@ -13,7 +13,10 @@ This project provides a single dashboard and API to:
 - Publish each app behind Tailscale Serve using a unique URL path.
 - Persist configuration in YAML.
 - Relaunch configured apps on wrapper startup.
+- Check GitHub update status on startup for apps with `github_location`.
+- Visibly flag apps that have updates available.
 - Stop managed apps on wrapper shutdown.
+- Keep an in-app event/error log pane for significant actions.
 
 ## Managed App Model
 
@@ -86,6 +89,12 @@ Open:
 
 - `http://127.0.0.1:8080`
 
+On startup, the wrapper also:
+
+- Launches configured managed apps.
+- Re-applies `tailscale serve --set-path` routes for each app.
+- Checks GitHub-backed apps for available remote commits and marks apps with updates.
+
 ## Environment Variables
 
 You can change wrapper settings with these environment variables:
@@ -128,11 +137,26 @@ tailscale serve --bg --set-path /<web_path> http://127.0.0.1:<application_port>
 2. Kill the saved PID (Windows uses process tree termination).
 3. Remove the app entry from `apps_config.yaml`.
 
+## Update Checks and Logs
+
+From the UI:
+
+- **Check GitHub Updates** checks all apps that have `github_location`.
+- If updates are found, the app pulls latest code, restarts the managed app, and refreshes route mapping.
+- **Application Log** shows significant events and errors (add/delete/startup/shutdown/update actions).
+
+From the API:
+
+- `GET /api/logs`: returns recent in-memory log entries.
+- `POST /api/apps/check-updates`: checks GitHub-backed apps, updates/restarts outdated apps, and returns per-app results.
+
 ## API Endpoints
 
 - `GET /api/apps`: list configured apps
 - `POST /api/apps`: add an app
 - `DELETE /api/apps/<app_id>`: delete an app
+- `GET /api/logs`: list recent event log entries
+- `POST /api/apps/check-updates`: check and apply GitHub updates for managed apps
 
 ## Troubleshooting
 

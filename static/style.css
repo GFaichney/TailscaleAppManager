@@ -92,6 +92,13 @@ button.delete {
   gap: 0.8rem;
 }
 
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -117,6 +124,15 @@ button.delete {
   font-size: 0.92rem;
 }
 
+.update-flag {
+  color: #7a4b00;
+  background: #fff2cc;
+  border: 1px solid #f3d38b;
+  border-radius: 8px;
+  padding: 0.3rem 0.45rem;
+  font-weight: 600;
+}
+
 #status {
   min-height: 1.2rem;
   color: var(--muted);
@@ -124,6 +140,42 @@ button.delete {
 
 #status.error {
   color: var(--danger);
+}
+
+.log-pane {
+  border: 1px solid var(--line);
+  background: #fcfffe;
+  border-radius: 10px;
+  padding: 0.7rem;
+  max-height: 280px;
+  overflow: auto;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.log-entry {
+  border-left: 4px solid var(--line);
+  padding: 0.4rem 0.55rem;
+  background: #fff;
+}
+
+.log-entry.error {
+  border-left-color: var(--danger);
+}
+
+.log-entry.info {
+  border-left-color: var(--accent);
+}
+
+.log-entry p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.log-meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 0.2rem;
 }
 
 @media (max-width: 640px) {

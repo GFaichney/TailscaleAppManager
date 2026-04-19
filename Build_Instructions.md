@@ -45,5 +45,10 @@ A wrapper app to easily launch a list of different apps with web frontends and t
 - When the application is started up:
   - Launch each app from its folder, in the background, using its executable
   - In the background, run `tailscale serve --bg --set-path /{{web_path}}}} http://127.0.0.1:{{application:port}}`
+  - Run a check on each application with a github_location and visibly flag any that have updated code available in Github
 - When the application is stopped, shut down all running applications
+- Include an application log pane that keeps track of errors and significant events (e.g. app additions, deletions, startupm and shutdown)
+- Include a button to check for updates on Github for all apps that have a github_location configured
+  - **If** clicked, check for new code for each application that has a github_location
+  - **If** an application has new code, pull it, kill the application then restart it using its execution script
   

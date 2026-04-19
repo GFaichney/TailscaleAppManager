@@ -54,9 +54,20 @@
     <section class="panel">
       <div class="panel-title">
         <h2>Managed Applications</h2>
-        <button id="refreshBtn" type="button">Refresh</button>
+        <div class="inline-actions">
+          <button id="checkUpdatesBtn" type="button">Check GitHub Updates</button>
+          <button id="refreshBtn" type="button">Refresh</button>
+        </div>
       </div>
       <div id="appsList" class="cards"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>Application Log</h2>
+        <button id="refreshLogsBtn" type="button">Refresh Logs</button>
+      </div>
+      <div id="logPane" class="log-pane" aria-live="polite"></div>
     </section>
   </main>
 

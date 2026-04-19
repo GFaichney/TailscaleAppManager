@@ -7,6 +7,8 @@ import shutil
 import signal
 import subprocess
 import uuid
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,8 @@ from flask import Flask, jsonify, render_template, request
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "apps_config.yaml"
 INSTALLED_APPS_DIR = BASE_DIR / "installed_apps"
+LOG_LIMIT = 300
+EVENT_LOGS: deque[dict[str, Any]] = deque(maxlen=LOG_LIMIT)
 
 app = Flask(__name__)
 _shutdown_done = False
@@ -23,6 +27,136 @@ _shutdown_done = False
 
 def wrapper_port() -> int:
     return int(os.getenv("WRAPPER_PORT", "8080"))
+
+
+def log_event(level: str, message: str, app_name: str | None = None, details: dict[str, Any] | None = None) -> None:
+    EVENT_LOGS.append(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": level,
+            "message": message,
+            "app_name": app_name,
+            "details": details or {},
+        }
+    )
+
+
+def restart_app_entry(app_entry: dict[str, Any]) -> None:
+    app_folder = app_entry.get("application_folder")
+    executable = app_entry.get("executable") or "./run.sh"
+    web_path = app_entry.get("web_path")
+    app_port = app_entry.get("application_port")
+    app_name = app_entry.get("application_name", "unknown")
+
+    if not app_folder or not web_path or not isinstance(app_port, int):
+        raise RuntimeError("Missing application_folder, web_path, or valid application_port")
+
+    folder_path = Path(app_folder).expanduser().resolve()
+    if not folder_path.exists() or not folder_path.is_dir():
+        raise FileNotFoundError(f"Application folder does not exist: {folder_path}")
+
+    pid = app_entry.get("pid")
+    if isinstance(pid, int):
+        stop_process(pid)
+        log_event("info", "Stopped existing process before restart.", app_name, {"pid": pid})
+
+    proc = launch_application(folder_path, executable)
+    app_entry["pid"] = proc.pid
+    tailscale_set_path(web_path, app_port)
+    log_event("info", "Application started and mapped with tailscale serve.", app_name, {"pid": proc.pid, "web_path": web_path, "port": app_port})
+
+
+def get_current_branch(repo_path: Path) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Unable to detect current branch: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def get_behind_commit_count(repo_path: Path, branch: str) -> int:
+    fetch_result = subprocess.run(
+        ["git", "fetch", "origin", branch],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if fetch_result.returncode != 0:
+        raise RuntimeError(f"git fetch failed: {fetch_result.stderr.strip()}")
+
+    count_result = subprocess.run(
+        ["git", "rev-list", "--count", f"HEAD..origin/{branch}"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if count_result.returncode != 0:
+        raise RuntimeError(f"Unable to compare revisions: {count_result.stderr.strip()}")
+
+    try:
+        return int(count_result.stdout.strip() or "0")
+    except ValueError as exc:
+        raise RuntimeError("Invalid revision count returned by git.") from exc
+
+
+def pull_latest(repo_path: Path, branch: str) -> None:
+    result = subprocess.run(
+        ["git", "pull", "origin", branch],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git pull failed: {result.stderr.strip()}")
+
+
+def update_github_status_for_app(app_entry: dict[str, Any]) -> bool:
+    github_location = app_entry.get("github_location")
+    if not github_location:
+        app_entry["update_available"] = False
+        app_entry["pending_commits"] = 0
+        return False
+
+    folder = app_entry.get("application_folder")
+    app_name = app_entry.get("application_name", "unknown")
+    if not folder:
+        app_entry["update_available"] = False
+        app_entry["pending_commits"] = 0
+        log_event("error", "Cannot check GitHub updates because application_folder is missing.", app_name)
+        return False
+
+    repo_path = Path(folder).expanduser().resolve()
+    if not repo_path.exists() or not (repo_path / ".git").exists():
+        app_entry["update_available"] = False
+        app_entry["pending_commits"] = 0
+        log_event("error", "Cannot check GitHub updates because application folder is not a git repository.", app_name)
+        return False
+
+    try:
+        branch = get_current_branch(repo_path)
+        behind_count = get_behind_commit_count(repo_path, branch)
+        app_entry["update_available"] = behind_count > 0
+        app_entry["pending_commits"] = behind_count
+        log_event(
+            "info",
+            "Checked GitHub update status.",
+            app_name,
+            {"update_available": behind_count > 0, "pending_commits": behind_count},
+        )
+        return True
+    except Exception as exc:
+        app_entry["update_available"] = False
+        app_entry["pending_commits"] = 0
+        log_event("error", f"GitHub update status check failed: {exc}", app_name)
+        return False
 
 
 def ensure_config() -> None:
@@ -230,16 +364,20 @@ def launch_all_configured_apps() -> None:
             continue
 
         try:
-            proc = launch_application(folder_path, executable)
-            app_entry["pid"] = proc.pid
-            tailscale_set_path(web_path, app_port)
+            restart_app_entry(app_entry)
             updated = True
         except Exception:
             # Continue launching remaining apps even if one fails.
+            log_event("error", "Failed to launch application during wrapper startup.", app_entry.get("application_name", "unknown"))
             continue
+
+        if app_entry.get("github_location"):
+            if update_github_status_for_app(app_entry):
+                updated = True
 
     if updated:
         save_config(data)
+        log_event("info", "Wrapper startup completed and application state was updated.")
 
 
 def stop_all_configured_apps() -> None:
@@ -257,11 +395,14 @@ def stop_all_configured_apps() -> None:
         pid = app_entry.get("pid")
         if isinstance(pid, int):
             stop_process(pid)
+            log_event("info", "Stopped managed application during wrapper shutdown.", app_entry.get("application_name", "unknown"), {"pid": pid})
             app_entry["pid"] = None
             changed = True
 
     if changed:
         save_config(data)
+
+    log_event("info", "Wrapper shutdown completed.")
 
 
 def _handle_shutdown_signal(*_: Any) -> None:
@@ -279,17 +420,24 @@ def get_apps() -> Any:
     return jsonify(load_config()["apps"])
 
 
+@app.get("/api/logs")
+def get_logs() -> Any:
+    return jsonify(list(EVENT_LOGS))
+
+
 @app.post("/api/apps")
 def add_app() -> Any:
     payload = request.get_json(silent=True) or {}
     ok, error = validate_app_input(payload)
     if not ok:
+        log_event("error", f"Add application validation failed: {error}")
         return jsonify({"error": error}), 400
 
     data = load_config()
 
     ok, error = validate_port_conflict(payload, data["apps"])
     if not ok:
+        log_event("error", f"Add application rejected due to port conflict: {error}", payload.get("application_name"))
         return jsonify({"error": error}), 409
 
     app_folder: Path
@@ -322,12 +470,20 @@ def add_app() -> Any:
             "github_location": payload.get("github_location"),
             "pid": proc.pid,
             "cloned_from_github": cloned_from_github,
+            "update_available": False,
+            "pending_commits": 0,
         }
+
+        if app_record["github_location"]:
+            update_github_status_for_app(app_record)
+
         data["apps"].append(app_record)
         save_config(data)
+        log_event("info", "Application added and started.", app_record["application_name"], {"pid": proc.pid, "web_path": app_record["web_path"], "port": app_record["application_port"]})
 
         return jsonify(app_record), 201
     except Exception as exc:
+        log_event("error", f"Failed to add application: {exc}", payload.get("application_name"))
         return jsonify({"error": str(exc)}), 500
 
 
@@ -338,6 +494,7 @@ def delete_app(app_id: str) -> Any:
 
     app_entry = next((item for item in apps if item.get("id") == app_id), None)
     if not app_entry:
+        log_event("error", "Delete failed because application was not found.", details={"app_id": app_id})
         return jsonify({"error": "Application not found."}), 404
 
     tailscale_drain()
@@ -345,15 +502,77 @@ def delete_app(app_id: str) -> Any:
     pid = app_entry.get("pid")
     if isinstance(pid, int):
         stop_process(pid)
+        log_event("info", "Stopped application process during delete.", app_entry.get("application_name", "unknown"), {"pid": pid})
 
     data["apps"] = [item for item in apps if item.get("id") != app_id]
     save_config(data)
+    log_event("info", "Application deleted.", app_entry.get("application_name", "unknown"), {"app_id": app_id})
 
     return jsonify({"deleted": app_id})
 
 
+@app.post("/api/apps/check-updates")
+def check_updates() -> Any:
+    data = load_config()
+    results: list[dict[str, Any]] = []
+    changed = False
+
+    for app_entry in data.get("apps", []):
+        app_name = app_entry.get("application_name", "unknown")
+        github_location = app_entry.get("github_location")
+
+        if not github_location:
+            continue
+
+        folder = app_entry.get("application_folder")
+        if not folder:
+            results.append({"application_name": app_name, "status": "error", "message": "Missing application_folder"})
+            log_event("error", "Update check failed due to missing application_folder.", app_name)
+            continue
+
+        repo_path = Path(folder).expanduser().resolve()
+        if not repo_path.exists() or not (repo_path / ".git").exists():
+            results.append({"application_name": app_name, "status": "error", "message": "Application folder is not a git repository"})
+            log_event("error", "Update check failed because application folder is not a git repository.", app_name)
+            continue
+
+        try:
+            branch = get_current_branch(repo_path)
+            behind_count = get_behind_commit_count(repo_path, branch)
+            if behind_count <= 0:
+                app_entry["update_available"] = False
+                app_entry["pending_commits"] = 0
+                changed = True
+                results.append({"application_name": app_name, "status": "up-to-date", "message": "No updates found"})
+                log_event("info", "Update check found no new commits.", app_name)
+                continue
+
+            pull_latest(repo_path, branch)
+            restart_app_entry(app_entry)
+            app_entry["update_available"] = False
+            app_entry["pending_commits"] = 0
+            changed = True
+            results.append(
+                {
+                    "application_name": app_name,
+                    "status": "updated",
+                    "message": f"Pulled {behind_count} commit(s) and restarted application",
+                }
+            )
+            log_event("info", "Application updated from GitHub and restarted.", app_name, {"commits": behind_count})
+        except Exception as exc:
+            results.append({"application_name": app_name, "status": "error", "message": str(exc)})
+            log_event("error", f"Update check failed: {exc}", app_name)
+
+    if changed:
+        save_config(data)
+
+    return jsonify({"results": results})
+
+
 if __name__ == "__main__":
     ensure_config()
+    log_event("info", "Wrapper startup initiated.")
 
     launch_all_configured_apps()
     atexit.register(stop_all_configured_apps)
